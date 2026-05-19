@@ -11,7 +11,7 @@ def get_db_connection():
         host="localhost",
         database="postgres",
         user="postgres",
-        password="YOUR_PASSWORD",  # ⚠️ 리더님의 실제 PostgreSQL 비밀번호를 적어주세요!
+        password="kuun0727",  # ⚠️ 리더님의 실제 PostgreSQL 비밀번호를 적어주세요!
         port="5432"
     )
 
