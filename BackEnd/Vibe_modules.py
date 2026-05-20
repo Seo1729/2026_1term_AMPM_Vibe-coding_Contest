@@ -28,31 +28,74 @@ class SecurityGuard:
 
 # 🚀 [객체 A] 1학년 팀원 전용 공간 (진짜 실력 향상을 위해 아예 비워둠)
 class CampusSeeder:
-    def __init__(self, db_conn_func):
-        """
-        db_conn_func: 매개변수로 넘어오는 DB 연결 함수입니다.
-        self.get_connection()을 호출하면 DB 커넥션 객체가 반환됩니다.
-        """
-        self.get_connection = db_conn_func
+    """
+    [1학년 미션: 가짜 데이터를 데이터베이스에 넣어주는 클래스]
+    """
+    def __init__(self, db_connection_fn):
+        self.get_connection = db_connection_fn
 
-    def inject_seeds(self, campus_posts: list) -> dict:
-        """
-        🔥 [1학년 미션] 
-        프론트엔드나 클라이언트가 전송한 가상 게시글 리스트(campus_posts)를 
-        우리 PostgreSQL(PostGIS) 데이터베이스에 자동으로 삽입(INSERT)하는 로직을 완성하세요.
-        
-        - campus_posts 구조 예시: [['내용1', '장소1', '카테고리1', 경도, 위도], ...]
-        - 힌트 1: 데이터를 넣기 전에 테이블을 비워주는(TRUNCATE) 게 좋습니다.
-        - 힌트 2: 위치 데이터는 ST_SetSRID와 ST_MakePoint를 활용해 공간 데이터로 변환해야 합니다.
-        
-        - 리턴 형식: 
-          성공 시 -> {"status": "success", "count": 넣은 데이터 개수}
-          실패 시 -> {"status": "error", "message": str(e)}
-        """
-        # -------------------------------------------------------------
-        # ⚠️ 여기를 직접 채워 넣으세요! 리더님은 절대 먼저 만지지 않습니다.
-        # -------------------------------------------------------------
-        pass
+    def inject_seeds(self, data_list):
+        if not data_list or not isinstance(data_list, list):
+            return {"status": "error", "message": "데이터가 비어있거나 배열 형식이 아닙니다."}
+
+        conn = None
+        cursor = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # PostGIS 및 테이블 생성 검증
+            cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis;")            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS posts (
+                    id SERIAL PRIMARY KEY,
+                    content TEXT,
+                    place_name TEXT,
+                    category TEXT,
+                    geom GEOMETRY(Point, 4326)
+                );
+            """)
+            
+            # 💡 보완 1: 시드 데이터가 중복으로 쌓이지 않도록 실행 전 테이블 초기화
+            cursor.execute("TRUNCATE TABLE posts RESTART IDENTITY;")
+            
+            inserted_count = 0
+            query = """
+                INSERT INTO posts (content, place_name, category, geom)
+                VALUES (%s, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326));
+            """
+            
+            for item in data_list:
+                # 💡 보완 3: 혹시라도 좌표 데이터가 누락되었을 때 서버가 터지는 것 방지
+                try:
+                    lng = float(item.get('lng', 0.0))
+                    lat = float(item.get('lat', 0.0))
+                except (TypeError, ValueError):
+                    continue # 잘못된 좌표 형식은 스킵하고 다음 데이터 진행
+                
+                cursor.execute(query, (
+                    item.get('content', '내용 없음'),
+                    item.get('place_name', '알 수 없는 장소'),
+                    item.get('category', '일반'),
+                    lng, 
+                    lat
+                ))
+                inserted_count += 1
+                
+            conn.commit()
+            return {"status": "success", "count": inserted_count}
+            
+        except Exception as e:
+            if conn:
+                conn.rollback() 
+            return {"status": "error", "message": f"DB 주입 중 에러 발생: {str(e)}"}
+            
+        # 💡 보완 2: 성공하든 실패하든 DB 연결은 무조건 안전하게 닫기
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
 
 # 📡 [객체 C] 백엔드 엔진의 헬스체크 및 API 가동 상태 모니터링 객체 (리더님 담당)
