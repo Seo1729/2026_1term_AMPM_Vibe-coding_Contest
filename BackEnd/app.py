@@ -1,10 +1,11 @@
-# app.py
 from flask import Flask, jsonify, request
+from flask_cors import CORS  # 1. CORS를 실제 일하는 메인 앱으로 구출!
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from Vibe_modules import SecurityGuard, CampusSeeder
+from Vibe_modules import SecurityGuard, CampusSeeder  # 2. 소문자 파일명 매칭 완료
 
 app = Flask(__name__)
+CORS(app)  # 3. 세훈이 및 프론트팀 연동을 위한 CORS 완전 허용
 
 def get_db_connection():
     return psycopg2.connect(
@@ -16,7 +17,7 @@ def get_db_connection():
 guard = SecurityGuard()
 seeder = CampusSeeder(get_db_connection)
 
-# [API 1] 주변 탐색 API (리더님 및 2학년 연동용)
+# [API 1] 주변 탐색 API
 @app.route('/api/posts/nearby', methods=['GET'])
 def get_nearby_posts():
     try:
@@ -30,7 +31,7 @@ def get_nearby_posts():
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         query = """
-            SELECT p.id, p.content, p.place_name, p.category,
+            SELECT p.id, p.content, p.place_name, p.category, p.user_id,
                    ST_X(p.geom) as lng, ST_Y(p.geom) as lat,
                    ST_Distance(p.geom, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography) as distance
             FROM posts p
@@ -53,16 +54,28 @@ def get_nearby_posts():
 @app.route('/api/admin/seed', methods=['POST'])
 def run_db_seed():
     data_from_1st_year = request.json 
-    
-    # 1학년이 완성할 객체에 일 맡기기
     result = seeder.inject_seeds(data_from_1st_year)
     
-    # 1학년이 리턴 형식을 맞춰왔는지 확인하고 응답
     if result and result.get("status") == "success":
         return jsonify({"message": f"성공! {result['count']}개 데이터 적재 완료."}), 201
     else:
         error_msg = result.get("message") if result else "함수가 아무것도 리턴하지 않았습니다 (None)"
         return jsonify({"message": "시드 주입 실패", "error": error_msg}), 500
+
+# 4. 유령 공간에 있던 세훈이용 임시 가짜 API를 메인 서버로 안전하게 이동!
+@app.route('/api/posts/mock', methods=['GET'])
+def get_mock_posts():
+    return jsonify([
+        {
+            "id": 999,
+            "content": "[임시] 연동 테스트용 정문 에어팟 분실물 데이터입니다.",
+            "place_name": "전북대 정문",
+            "category": "분실물",
+            "lat": 35.8115,
+            "lng": 127.1484,
+            "distance": 0.0
+        }
+    ])
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
