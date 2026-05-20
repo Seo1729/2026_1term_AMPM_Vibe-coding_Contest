@@ -2,7 +2,12 @@
 import psycopg2
 import requests
 import time
+from flask import Flask, jsonify, request
+from flask_cors import CORS
 
+
+app = Flask(__name__)
+CORS(app)  # 2. 모든 도메인에서의 접근을 허용 (연동 치트키)
 # 🛡️ [객체 B] 보안 및 데이터 검증을 담당하는 가드 객체 (리더님 담당)
 class SecurityGuard:
     def __init__(self):
@@ -71,3 +76,18 @@ class ServerMonitor:
                 print(f"❌ [{time.strftime('%X')}] 서버가 죽었거나 응답이 없습니다! 에러 원인: {e}")
                 
             time.sleep(interval_sec)
+
+# 세훈이가 DB 상황에 구애받지 않고 화면 개발을 할 수 있게 해주는 임시 가짜 API
+@app.route('/api/posts/mock', methods=['GET'])
+def get_mock_posts():
+    return jsonify([
+        {
+            "id": 999,
+            "content": "[임시] 연동 테스트용 정문 에어팟 분실물 데이터입니다.",
+            "place_name": "전북대 정문",
+            "category": "분실물",
+            "lat": 35.8115,
+            "lng": 127.1484,
+            "distance": 0.0
+        }
+    ])
