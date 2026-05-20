@@ -9,7 +9,7 @@ app = Flask(__name__)
 def get_db_connection():
     return psycopg2.connect(
         host="localhost", database="postgres", user="postgres",
-        password="YOUR_PASSWORD", port="5432"
+        password="kuun0727", port="5432"
     )
 
 # 비즈니스 객체 생성
