@@ -2,7 +2,7 @@
 from flask import Flask, jsonify, request
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from vibe_modules import SecurityGuard, CampusSeeder
+from Vibe_modules import SecurityGuard, CampusSeeder
 
 app = Flask(__name__)
 
