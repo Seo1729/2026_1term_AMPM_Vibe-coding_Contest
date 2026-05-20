@@ -57,7 +57,7 @@ class CampusSeeder:
             """)
             
             # 💡 보완 1: 시드 데이터가 중복으로 쌓이지 않도록 실행 전 테이블 초기화
-            cursor.execute("TRUNCATE TABLE posts RESTART IDENTITY;")
+            cursor.execute("TRUNCATE TABLE posts RESTART IDENTITY CASCADE;")
             
             inserted_count = 0
             query = """
