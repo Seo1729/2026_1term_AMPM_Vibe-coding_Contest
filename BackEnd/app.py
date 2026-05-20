@@ -2,32 +2,33 @@
 from flask import Flask, jsonify, request
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from vibe_modules import SecurityGuard, CampusSeeder
 
 app = Flask(__name__)
 
-# DB 연결 설정 함수
 def get_db_connection():
     return psycopg2.connect(
-        host="localhost",
-        database="postgres",
-        user="postgres",
-        password="kuun0727",  # ⚠️ 리더님의 실제 PostgreSQL 비밀번호를 적어주세요!
-        port="5432"
+        host="localhost", database="postgres", user="postgres",
+        password="YOUR_PASSWORD", port="5432"
     )
 
-# [핵심 API] 내 주변 게시글 필터링 및 거리 계산 목록 반환
+# 비즈니스 객체 생성
+guard = SecurityGuard()
+seeder = CampusSeeder(get_db_connection)
+
+# [API 1] 주변 탐색 API (리더님 및 2학년 연동용)
 @app.route('/api/posts/nearby', methods=['GET'])
 def get_nearby_posts():
     try:
-        # 클라이언트(자바)가 보내준 위도, 경도, 반경 값 읽기 (기본값 설정)
-        user_lng = float(request.args.get('lng', 127.1484))  # 전북대 정문 경도
-        user_lat = float(request.args.get('lat', 35.8115))   # 전북대 정문 위도
-        radius = float(request.args.get('radius', 300.0))    # 필터링 반경 (m)
+        lat = float(request.args.get('lat', 35.8115))
+        lng = float(request.args.get('lng', 127.1484))
+        radius = float(request.args.get('radius', 300.0))
+
+        if not guard.is_valid_coordinates(lat, lng):
+            return jsonify({"status": "error", "message": "유효하지 않은 GPS 좌표 범위입니다."}), 400
 
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-        # PostGIS 핵심 공간 쿼리 (거리 계산 및 정렬)
         query = """
             SELECT p.id, p.content, p.place_name, p.category,
                    ST_X(p.geom) as lng, ST_Y(p.geom) as lat,
@@ -36,19 +37,32 @@ def get_nearby_posts():
             WHERE ST_DWithin(p.geom, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography, %s)
             ORDER BY distance ASC;
         """
-        
-        cursor.execute(query, (user_lng, user_lat, user_lng, user_lat, radius))
+        cursor.execute(query, (lng, lat, lng, lat, radius))
         posts = cursor.fetchall()
+        
+        clean_posts = [p for p in posts if guard.is_clean_content(p['content'])]
 
         cursor.close()
         conn.close()
-        
-        # 자바가 읽기 편하도록 JSON 배열 형태로 곧바로 반환
-        return jsonify(posts)
+        return jsonify(clean_posts)
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# [API 2] 1학년 팀원의 미션 검증용 엔드포인트
+@app.route('/api/admin/seed', methods=['POST'])
+def run_db_seed():
+    data_from_1st_year = request.json 
+    
+    # 1학년이 완성할 객체에 일 맡기기
+    result = seeder.inject_seeds(data_from_1st_year)
+    
+    # 1학년이 리턴 형식을 맞춰왔는지 확인하고 응답
+    if result and result.get("status") == "success":
+        return jsonify({"message": f"성공! {result['count']}개 데이터 적재 완료."}), 201
+    else:
+        error_msg = result.get("message") if result else "함수가 아무것도 리턴하지 않았습니다 (None)"
+        return jsonify({"message": "시드 주입 실패", "error": error_msg}), 500
 
 if __name__ == '__main__':
-    # 외부 접속 허용 (0.0.0.0), 포트 5000번 가동
     app.run(host='0.0.0.0', port=5000, debug=True)
