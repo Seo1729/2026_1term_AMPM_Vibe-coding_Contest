@@ -13,6 +13,12 @@ export default function Home() {
   const [mainMap, setMainMap] = useState<any>(null);
   const [miniMap, setMiniMap] = useState<any>(null);
   
+  // 왼쪽 글쓰기 창 열림/닫힘 상태 관리
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  
+  // 🌟 우측 상단 카테고리 필터 상태 관리 (기본값: 전체)
+  const [activeFilter, setActiveFilter] = useState('전체');
+  
   // 위치 관련 상태 (기본 전북대 중심)
   const [currentCoords, setCurrentCoords] = useState({ lat: 35.8115, lng: 127.1484 });
   const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -23,11 +29,15 @@ export default function Home() {
   const mainMarkersRef = useRef<any[]>([]);
 
   // 게시글 작성 폼 상태
+  const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('분실물');
   const [derivedPlaceName, setDerivedPlaceName] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
+
+  // 카테고리 목록 정의
+  const categories = ['전체', '분실물', '습득물', '자유게시판', '질문'];
 
   // 1. 메인 지도 초기화
   const initMainMap = () => {
@@ -40,7 +50,7 @@ export default function Home() {
       const map = new window.kakao.maps.Map(container, options);
       setMainMap(map);
 
-      // 현재 위치에 커스텀 마커나 이펙트 추가 가능 (여기서는 기본 마커로 내 위치 표시)
+      // 내 현재 위치 기본 마커 표시
       const locPosition = new window.kakao.maps.LatLng(currentCoords.lat, currentCoords.lng);
       new window.kakao.maps.Marker({
         map: map,
@@ -50,7 +60,7 @@ export default function Home() {
     }
   };
 
-  // 2. 사용자의 실제 GPS 위치 들고오기 (지도에 현재위치 표시)
+  // 2. 사용자의 실제 GPS 위치 들고오기
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -67,15 +77,17 @@ export default function Home() {
     }
   }, [mainMap]);
 
-  // 3. 서버에서 마커 데이터 땡겨와서 뿌리기 + 인기글 이펙트 분기
+  // 3. 🌟 마커 데이터 땡겨오기 (카테고리 필터 쿼리 추가!)
   const loadNearbyMarkers = () => {
     if (!mainMap) return;
 
-    // 기존 메인 마커 초기화
     mainMarkersRef.current.forEach(m => m.setMap(null));
     mainMarkersRef.current = [];
 
-    fetch(`http://127.0.0.1:5000/api/posts/nearby?lat=${currentCoords.lat}&lng=${currentCoords.lng}&radius=1500`)
+    // 백엔드 API에 카테고리 필터 조건 파라미터(`&category=...`)를 붙여서 요청하도록 연동
+    const categoryParam = activeFilter !== '전체' ? `&category=${encodeURIComponent(activeFilter)}` : '';
+    
+    fetch(`http://127.0.0.1:5000/api/posts/nearby?lat=${currentCoords.lat}&lng=${currentCoords.lng}&radius=1500${categoryParam}`)
       .then((res) => res.json())
       .then((data) => {
         if (!Array.isArray(data)) return;
@@ -85,28 +97,29 @@ export default function Home() {
         data.forEach((post: any) => {
           const markerPosition = new window.kakao.maps.LatLng(post.lat, post.lng);
           
-          // 🔥 기획 변경안: 인기 게시글(예: 좋아요 10개 이상 혹은 조회수 높은 글) 마커 차별화 효과
           let markerImage = null;
-          if (post.is_popular) { // 백엔드에서 판별해주거나 프론트에서 post.likes > 10 조건문 처리
-            const imageSrc = 'https://t1.daumcdn.net/localimg/localimages/07/2012/img/marker_p.png'; // 붉은색/튀는 색 마커
-            const imageSize = new window.kakao.maps.Size(45, 45); // 더 크게 설정
+          if (post.is_popular) {
+            const imageSrc = 'https://t1.daumcdn.net/localimg/localimages/07/2012/img/marker_p.png';
+            const imageSize = new window.kakao.maps.Size(45, 45);
             markerImage = new window.kakao.maps.MarkerImage(imageSrc, imageSize);
           }
 
           const marker = new window.kakao.maps.Marker({
             position: markerPosition,
-            image: markerImage, // 인기글이면 커스텀 크기/이펙트 이미지 주입
+            image: markerImage,
           });
 
           marker.setMap(mainMap);
 
-          // 인포윈도우 스타일 (인기글이면 테두리에 포인트를 주는 효과 추가 가능)
           const iwContent = `
             <div style="padding:10px; font-size:12px; color:#333; width:220px; line-height:1.4;">
               ${post.is_popular ? `<span style="background-color:#ef4444; color:white; padding:2px 6px; font-size:10px; font-weight:bold; border-radius:4px; margin-bottom:4px; display:inline-block;">🔥 인기글</span>` : ''}
-              <br/><b style="color:#4f46e5;">[${post.category}]</b> ${post.place_name}<br/>
+              <br/>
+              <span style="color:#4f46e5; font-weight:bold;">[${post.category}]</span> 
+              <span style="font-weight:800; font-size:13px; color:#111;">${post.title || '제목 없음'}</span><br/>
+              <span style="font-size:11px; color:#666;">📍 ${post.place_name}</span><br/>
               ${post.image_url ? `<img src="${post.image_url}" style="width:100%; height:80px; object-fit:cover; margin:5px 0; border-radius:6px;"/>` : ''}
-              <p style="margin-top:4px; font-weight:500;">${post.content}</p>
+              <p style="margin-top:6px; font-weight:500; color:#444;">${post.content}</p>
             </div>
           `;
           const infowindow = new window.kakao.maps.InfoWindow({
@@ -126,61 +139,57 @@ export default function Home() {
       .catch((err) => console.error('마커 로딩 실패:', err));
   };
 
+  // 🌟 지도 인스턴스, GPS 좌표, 혹은 '선택한 필터'가 바뀔 때마다 마커 리로드!
   useEffect(() => {
     loadNearbyMarkers();
-  }, [mainMap, currentCoords]);
+  }, [mainMap, currentCoords, activeFilter]);
 
-  // 4. 게시물 작성 창 아래 '작은 지도' 및 반경 50m 설정 로직
+  // 4. 미니맵 초기화 및 반경 50m 제한
   const initMiniMap = () => {
     const container = document.getElementById('mini-map');
-    if (!container || miniMap) return; // 이미 만들어졌으면 패스
+    if (!container || miniMap) return;
 
     const options = {
       center: new window.kakao.maps.LatLng(currentCoords.lat, currentCoords.lng),
-      level: 2, // 50m 반경이 잘 보이게 타이트하게 줌
+      level: 2,
     };
     const mMap = new window.kakao.maps.Map(container, options);
     setMiniMap(mMap);
 
     const centerPos = new window.kakao.maps.LatLng(currentCoords.lat, currentCoords.lng);
 
-    // 반경 50m 원(Circle) 그리기
     const circle = new window.kakao.maps.Circle({
       center: centerPos,
-      radius: 50, // 50미터 제한
+      radius: 50,
       strokeWeight: 2,
-      strokeColor: '#756ea8',
+      strokeColor: '#4f46e5',
       strokeOpacity: 0.8,
       strokeStyle: 'dashed',
-      fillColor: '#756ea8',
-      fillOpacity: 0.2
+      fillColor: '#4f46e5',
+      fillOpacity: 0.15
     });
     circle.setMap(mMap);
     miniCircleRef.current = circle;
 
-    // 움직일 수 있는 핀 생성
     const marker = new window.kakao.maps.Marker({
       position: centerPos,
-      draggable: true // 드래그 가능하게 세팅
+      draggable: true
     });
     marker.setMap(mMap);
     miniMarkerRef.current = marker;
 
-    // 최초 위치 값 세팅
     setSelectedCoords({ lat: currentCoords.lat, lng: currentCoords.lng });
     updateAddress(currentCoords.lng, currentCoords.lat);
 
-    // 드래그가 끝났을 때 50m 제한 체크하기
     window.kakao.maps.event.addListener(marker, 'dragend', function() {
       const currentMarkerPos = marker.getPosition();
       const polyline = new window.kakao.maps.Polyline({
         path: [centerPos, currentMarkerPos]
       });
 
-      // 현재 내 위치 기준 드래그한 거리 계산
       if (polyline.getLength() > 50) {
         alert("📍 반경 50m 이내에만 핀을 꽂을 수 있습니다!");
-        marker.setPosition(centerPos); // 원위치 복귀
+        marker.setPosition(centerPos);
         setSelectedCoords({ lat: currentCoords.lat, lng: currentCoords.lng });
         updateAddress(currentCoords.lng, currentCoords.lat);
       } else {
@@ -190,7 +199,6 @@ export default function Home() {
     });
   };
 
-  // 주소 역지오코딩 변환 함수
   const updateAddress = (lng: number, lat: number) => {
     const geocoder = new window.kakao.maps.services.Geocoder();
     geocoder.coord2Address(lng, lat, function (result: any, status: any) {
@@ -204,22 +212,21 @@ export default function Home() {
     });
   };
 
-  // 이미지 선택 핸들러
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setImageFile(file);
-      setImagePreview(URL.createObjectURL(file)); // 미리보기 생성
+      setImagePreview(URL.createObjectURL(file));
     }
   };
 
-  // 최종 제출 로직 (FormData로 이미지랑 데이터를 통째로 전송)
   const handlePostSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCoords || !content) return;
+    if (!selectedCoords || !title || !content) return;
 
     try {
       const formData = new FormData();
+      formData.append('title', title);
       formData.append('content', content);
       formData.append('place_name', derivedPlaceName);
       formData.append('category', category);
@@ -227,19 +234,22 @@ export default function Home() {
       formData.append('lng', String(selectedCoords.lng));
       formData.append('user_id', '1');
       if (imageFile) {
-        formData.append('image', imageFile); // 파일 첨부
+        formData.append('image', imageFile);
       }
 
       const response = await fetch('http://127.0.0.1:5000/api/posts', {
         method: 'POST',
-        body: formData, // JSON.stringify가 아니라 FormData 바디전송
+        body: formData,
       });
 
       if (response.ok) {
-        alert('📍 성공적으로 핀과 게시글을 등록했습니다!');
+        alert('📍 성공적으로 게시글을 발행했습니다!');
+        setTitle('');
         setContent('');
         setImageFile(null);
         setImagePreview('');
+        setIsSidebarOpen(false); 
+        setMiniMap(null); 
         loadNearbyMarkers();
       } else {
         alert('서버 저장 실패');
@@ -250,7 +260,7 @@ export default function Home() {
   };
 
   return (
-    <main className="w-screen h-screen flex bg-gray-50 overflow-hidden font-sans">
+    <main className="w-screen h-screen flex bg-gray-50 overflow-hidden font-sans relative">
       <Script
         src="//dapi.kakao.com/v2/maps/sdk.js?appkey=5a9cc8fe6f58844aafaa5b7e9a482c0b&libraries=services&autoload=false"
         strategy="afterInteractive"
@@ -261,21 +271,35 @@ export default function Home() {
         }}
       />
 
-      {/* 왼쪽 레이아웃: 대폭 바뀐 인스타 스타일 글작성창 + 하단 50m 미니맵 */}
-      <section className="w-[420px] h-full bg-white shadow-xl z-10 flex flex-col border-r border-gray-100 overflow-y-auto p-6">
-        <div className="mb-6">
-          <h2 className="text-xl font-black text-gray-900 tracking-tight">📝 새 게시글 작성</h2>
-          <p className="text-xs text-gray-400 mt-1">인스타 감성으로 동네 소식을 지도에 남겨보세요.</p>
+      {/* 왼쪽 레이아웃: 토글식 인스타 스타일 글작성 사이드바 */}
+      <section 
+        className={`fixed md:relative top-0 left-0 w-[420px] h-full bg-white shadow-2xl z-40 flex flex-col border-r border-gray-100 overflow-y-auto p-6 transition-transform duration-300 ease-in-out ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:hidden'
+        }`}
+        style={{ position: isSidebarOpen ? 'relative' : 'absolute' }}
+      >
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h2 className="text-xl font-black text-gray-900 tracking-tight">📝 새 게시글 작성</h2>
+            <p className="text-xs text-gray-400 mt-1">동네 소식을 지도에 남겨보세요.</p>
+          </div>
+          <button 
+            type="button"
+            onClick={() => { setIsSidebarOpen(false); setMiniMap(null); }}
+            className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 text-sm font-bold"
+          >
+            ✕ 닫기
+          </button>
         </div>
 
-        <form onSubmit={handlePostSubmit} className="space-y-5 flex-1 flex flex-col">
+        <form onSubmit={handlePostSubmit} className="space-y-4 flex-1 flex flex-col">
           {/* 카테고리 선택 */}
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-1.5">카테고리</label>
             <select 
               value={category} 
               onChange={(e) => setCategory(e.target.value)}
-              className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+              className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value="분실물">🎁 분실물</option>
               <option value="습득물">🔍 습득물</option>
@@ -284,19 +308,32 @@ export default function Home() {
             </select>
           </div>
 
-          {/* 텍스트 내용 */}
+          {/* 제목 입력 칸 */}
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5">제목</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-800 font-semibold"
+              placeholder="게시글의 제목을 적어주세요."
+              required
+            />
+          </div>
+
+          {/* 본문 내용 작성 */}
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-1.5">내용 작성</label>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-xl text-sm h-28 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-gray-800"
-              placeholder="여기에 동네 사람들과 공유할 내용을 상세히 적어주세요."
+              className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-800 h-24 resize-none"
+              placeholder="공유할 상세 내용을 적어주세요."
               required
             />
           </div>
 
-          {/* 이미지 업로드 UI 추가 */}
+          {/* 이미지 업로드 UI */}
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-1.5">📷 현장 사진 첨부</label>
             <input 
@@ -306,33 +343,33 @@ export default function Home() {
               className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
             />
             {imagePreview && (
-              <img src={imagePreview} alt="미리보기" className="mt-3 w-full h-32 object-cover rounded-xl border border-gray-100" />
+              <img src={imagePreview} alt="미리보기" className="mt-3 w-full h-28 object-cover rounded-xl border border-gray-100" />
             )}
           </div>
 
-          {/* 위치 지정 미니맵 (반경 50m 이내 지정) */}
-          <div className="flex-1 min-h-[220px] flex flex-col">
+          {/* 미니 지도 위치 탐색 */}
+          <div className="flex-1 min-h-[200px] flex flex-col">
             <div className="flex justify-between items-center mb-1.5">
-              <label className="text-xs font-bold text-gray-500">📍 정확한 위치 지정 (반경 50m 내 드래그)</label>
+              <label className="text-xs font-bold text-gray-500">📍 위치 지정 (반경 50m 내 드래그)</label>
               <button 
                 type="button" 
                 onClick={initMiniMap} 
-                className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg hover:bg-indigo-100 transition-colors"
+                className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg hover:bg-indigo-100"
               >
                 미니맵 불러오기
               </button>
             </div>
             
-            <div id="mini-map" className="w-full h-full bg-gray-100 rounded-2xl border border-gray-200 shadow-inner relative overflow-hidden" style={{ minHeight: '160px' }}>
+            <div id="mini-map" className="w-full h-full bg-gray-100 rounded-2xl border border-gray-200 shadow-inner relative overflow-hidden" style={{ minHeight: '140px' }}>
               <span className="absolute inset-0 m-auto h-fit w-fit text-xs font-semibold text-gray-400 pointer-events-none">불러오기 버튼을 눌러주세요</span>
             </div>
             <p className="text-[11px] text-indigo-600 font-bold mt-2 bg-indigo-50/50 p-2 rounded-lg">🎯 확정 주소: {derivedPlaceName}</p>
           </div>
 
-          {/* 제출 버튼 */}
+          {/* 발행 버튼 */}
           <button
             type="submit"
-            className="w-full py-3.5 bg-indigo-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all transform active:scale-95"
+            className="w-full py-3.5 bg-indigo-600 text-white font-bold rounded-xl text-sm shadow-lg hover:bg-indigo-700 active:scale-95 transition-all"
           >
             포스트 발행하기 ✨
           </button>
@@ -342,6 +379,37 @@ export default function Home() {
       {/* 오른쪽 레이아웃: 메인 전체 지도 */}
       <section className="flex-1 h-full relative">
         <div id="main-map" className="w-full h-full" />
+
+        {/* 🌟 우측 상단 카테고리 필터 버튼 그룹 추가 (인스타/달리 감성) */}
+        <div className="absolute top-5 right-5 z-30 flex space-x-2 bg-white/80 backdrop-blur-md p-2 rounded-2xl shadow-xl border border-white/40 max-w-[calc(100vw-30px)] overflow-x-auto scrollbar-none">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => setActiveFilter(cat)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeFilter === cat
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100 scale-105'
+                  : 'bg-white/50 text-gray-600 hover:bg-white hover:text-gray-950'
+              }`}
+            >
+              {cat === '전체' ? '🌐 ' : cat === '분실물' ? '🎁 ' : cat === '습득물' ? '🔍 ' : cat === '자유게시판' ? '💬 ' : '❓ '}
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        {/* 하단 중앙 글쓰기 플로팅 버튼 */}
+        {!isSidebarOpen && (
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(true)}
+            className="absolute bottom-10 left-1/2 transform -translate-x-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-black px-8 py-4 rounded-full shadow-2xl z-30 flex items-center space-x-2 text-sm tracking-wide transition-all hover:scale-105 active:scale-95 border-2 border-white/20"
+          >
+            <span className="text-lg">✏️</span>
+            <span>동네 소식 적기</span>
+          </button>
+        )}
       </section>
     </main>
   );
