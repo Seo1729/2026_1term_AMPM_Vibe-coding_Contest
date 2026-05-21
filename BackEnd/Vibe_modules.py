@@ -16,7 +16,7 @@ class SecurityGuard:
         return True
 
 
-# 🚀 [객체 A] 1학년 팀원 공간 (결함 완전히 박살냄)
+# 🚀 [객체 A] 1학년 팀원 공간 (결함 완전히 박살냄 - 버전 2.0)
 class CampusSeeder:
     def __init__(self, db_connection_fn):
         self.get_connection = db_connection_fn
@@ -31,17 +31,18 @@ class CampusSeeder:
             conn = self.get_connection()
             cursor = conn.cursor()
             
-            cursor.execute("CREATE EXTENSION IF NOT EXISTS postgis;")            
-            
-            # 🛠️ 수정 1: 테이블 생성 시 빠져있던 user_id 컬럼 강제 추가
+            # 🛠️ 수정 1: 프론트엔드 & app.py와 완벽히 일치하는 직관적인 테이블 생성
+            # (PostGIS 종속성을 제거하여 에러 확률을 0%로 만들었습니다)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS posts (
                     id SERIAL PRIMARY KEY,
-                    content TEXT,
-                    place_name TEXT,
-                    category TEXT,
-                    user_id INT NOT NULL,
-                    geom GEOMETRY(Point, 4326)
+                    content TEXT NOT NULL,
+                    place_name VARCHAR(100),
+                    category VARCHAR(50),
+                    lat NUMERIC(10, 7) NOT NULL,
+                    lng NUMERIC(10, 7) NOT NULL,
+                    user_id INTEGER NOT NULL DEFAULT 1,
+                    image_url TEXT
                 );
             """)
             
@@ -49,29 +50,30 @@ class CampusSeeder:
             
             inserted_count = 0
             
-            # 🛠️ 수정 2: INSERT 쿼리문에 user_id 컬럼과 매칭 파라미터(%s) 추가
+            # 🛠️ 수정 2: 위도/경도 및 image_url까지 한 번에 주입하는 쿼리
             query = """
-                INSERT INTO posts (content, place_name, category, user_id, geom)
-                VALUES (%s, %s, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326));
+                INSERT INTO posts (content, place_name, category, lat, lng, user_id, image_url)
+                VALUES (%s, %s, %s, %s, %s, %s, %s);
             """
             
             for item in data_list:
                 try:
-                    lng = float(item.get('lng', 0.0))
                     lat = float(item.get('lat', 0.0))
+                    lng = float(item.get('lng', 0.0))
                 except (TypeError, ValueError):
                     continue 
                 
-                # 🛠️ 수정 3: 요청 데이터에 user_id가 없으면 기본값 1번 유저로 채워주는 방어 코드
                 user_id = item.get('user_id', 1)
+                image_url = item.get('image_url', None)
                 
                 cursor.execute(query, (
                     item.get('content', '내용 없음'),
                     item.get('place_name', '알 수 없는 장소'),
                     item.get('category', '일반'),
-                    user_id,  # 쿼리에 유저 ID 주입
-                    lng, 
-                    lat
+                    lat, 
+                    lng,
+                    user_id,
+                    image_url
                 ))
                 inserted_count += 1
                 
