@@ -315,38 +315,65 @@ export default function Home() {
 
   // 2. 마커 생성 및 렌더링 (순정 블루 마커)
   const loadNearbyMarkers = () => {
-    if (!mainMap) return;
+  if (!mainMap) return;
 
-    mainMarkersRef.current.forEach(m => m.setMap(null));
-    mainMarkersRef.current = [];
+  mainMarkersRef.current.forEach(m => m.setMap(null));
+  mainMarkersRef.current = [];
 
-    const newMarkers: any[] = [];
+  // 🎨 카테고리별 색상 정의
+  const categoryColors: Record<string, string> = {
+    '분실물':    '#EF4444', // 빨강
+    '습득물':    '#22C55E', // 초록
+    '자유게시판': '#F59E0B', // 노랑
+    '질문':      '#3B82F6', // 파랑
+  };
 
-    const filteredData = mockupData.filter(post => 
-      activeFilter === '전체' ? true : post.category === activeFilter
-    );
+  // SVG 핀 생성 함수
+  const createSvgMarker = (color: string) => {
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
+        <path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 24 16 24s16-14 16-24C32 7.163 24.837 0 16 0z"
+          fill="${color}" stroke="white" stroke-width="2"/>
+        <circle cx="16" cy="16" r="7" fill="white" opacity="0.9"/>
+      </svg>
+    `;
+    const encoded = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    const imageSize = new window.kakao.maps.Size(32, 40);
+    const imageOption = { offset: new window.kakao.maps.Point(16, 40) };
+    return new window.kakao.maps.MarkerImage(encoded, imageSize, imageOption);
+  };
 
-    filteredData.forEach((post: MockPost) => {
-      const markerPosition = new window.kakao.maps.LatLng(post.lat, post.lng);
-      
-      const marker = new window.kakao.maps.Marker({
-  position: markerPosition,
-});
+  const filteredData = mockupData.filter(post =>
+    activeFilter === '전체' ? true : post.category === activeFilter
+  );
 
-      marker.setMap(mainMap);
+  const newMarkers: any[] = [];
 
-      window.kakao.maps.event.addListener(marker, 'click', () => {
-        setSelectedPost(post);
-        setSidebarMode('detail');
-        setIsSidebarOpen(true);
-        mainMap.panTo(markerPosition); 
-      });
+  filteredData.forEach((post: MockPost) => {
+    const markerPosition = new window.kakao.maps.LatLng(post.lat, post.lng);
+    const color = categoryColors[post.category] ?? '#6366F1'; // 기본 인디고
+    const markerImage = createSvgMarker(color);
 
-      newMarkers.push(marker);
+    const marker = new window.kakao.maps.Marker({
+      position: markerPosition,
+      image: markerImage,
     });
 
-    mainMarkersRef.current = newMarkers;
-  };
+    marker.setMap(mainMap);
+
+    window.kakao.maps.event.addListener(marker, 'click', () => {
+      setSelectedPost(post);
+      setSidebarMode('detail');
+      setIsSidebarOpen(true);
+      mainMap.panTo(markerPosition);
+    });
+
+    newMarkers.push(marker);
+  });
+
+  mainMarkersRef.current = newMarkers;
+};
+
 
   useEffect(() => {
     loadNearbyMarkers();
