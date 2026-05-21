@@ -56,13 +56,32 @@ def get_nearby_posts():
         # 전북대 중심부 좌표 설정 완료
         current_lat = request.args.get('lat', default=35.8461, type=float)
         current_lng = request.args.get('lng', default=127.1296, type=float)
-        radius = request.args.get('radius', default=1500, type=float)
+        radius = request.args.get('radius', default=3000, type=float)
         
+        category_filter = request.args.get('category', default=None, type=str)
+
         print(f"📍 주변 마커 요청 수신 -> 위도: {current_lat}, 경도: {current_lng}, 반경: {radius}m")
         
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         
+        # 💡 카테고리 필터 선택 여부에 따라 SQL 쿼리를 다르게 날립니다.
+        if category_filter and category_filter != "전체":
+            query = """
+                SELECT id, content, place_name, category, 
+                       CAST(lat AS FLOAT) as lat, CAST(lng AS FLOAT) as lng, user_id 
+                FROM posts 
+                WHERE category = %s;
+            """
+            cur.execute(query, (category_filter,))
+        else:
+            query = """
+                SELECT id, content, place_name, category, 
+                       CAST(lat AS FLOAT) as lat, CAST(lng AS FLOAT) as lng, user_id 
+                FROM posts;
+            """
+            cur.execute(query)
+
         # 안전하게 전체 글을 raw 상태로 수집
         query = "SELECT id, content, place_name, category, CAST(lat AS FLOAT) as lat, CAST(lng AS FLOAT) as lng, user_id FROM posts;"
         cur.execute(query)
@@ -75,6 +94,7 @@ def get_nearby_posts():
         filtered_posts = []
         for post in all_posts:
             distance = calculate_haversine(current_lat, current_lng, post['lat'], post['lng'])
+            #if distance <= radius:
             post['distance'] = distance
             filtered_posts.append(post)  # 👈 조건문(if)을 빼고 무조건 집어넣습니다!
                 
