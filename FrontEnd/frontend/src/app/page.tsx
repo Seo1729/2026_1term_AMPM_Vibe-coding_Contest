@@ -237,6 +237,17 @@ export default function Home() {
         lng: 127.1420,
         is_popular: false,
         image_url: ''
+      },
+      {
+        id: 212,
+        category: '자유게시판',
+        title: '통집',
+        content: '야르렁',
+        place_name: '전북대학교 통집',
+        lat: 35.843002,
+        lng: 127.134813,
+        is_popular: true  ,
+        image_url: ''
       }
     ];
 
