@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+import sys
+import os
+
+# 윈도우 환경에서 파이썬 내부 파일/문자열 처리 인코딩 시스템을 UTF-8로 강제 고정
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg2
@@ -8,45 +16,44 @@ app = Flask(__name__)
 # 프론트엔드 포트(3000) 접근 허용
 CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
 
-# DB 연결 함수 (리더님 환경 세팅 유지)
+# DB 연결 함수 (연결 파라미터 인코딩 완벽 방어)
 def get_db_connection():
-    return psycopg2.connect(
+    # 윈도우 계정명이나 환경 변수에 한글이 섞여 오류가 나는 것을 막기 위해 환경 설정 강제 초기화
+    os.environ['PGCLIENTENCODING'] = 'utf-8'
+    
+    conn = psycopg2.connect(
         host="localhost",
         database="vibe_db",
         user="postgres",
         password="kuun0727",  # 리더님의 실제 DB 비밀번호
         port="5432"
     )
+    conn.set_client_encoding('UTF8')
+    return conn
 
-# 1. 주변 핀 조회 API (★ 500 에러 해결을 위해 안전한 쿼리로 전면 전개)
+# 1. 주변 핀 조회 API
 @app.route('/api/posts/nearby', methods=['GET'])
 def get_nearby_posts():
     try:
-        # 쿼리가 정상적으로 도달했는지 백엔드 콘솔에 출력
-        print("📍 주변 마커 요청 수신 완료!")
+        print("📍 주변 마커 조회 요청 정상 수신!")
         
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         
-        # 삼각함수 오버플로우 에러를 방지하기 위해 전체 데이터를 가져온 후 파이어베이스식 필터링 처리
         query = "SELECT id, content, place_name, category, CAST(lat AS FLOAT) as lat, CAST(lng AS FLOAT) as lng, user_id FROM posts;"
         cur.execute(query)
         all_posts = cur.fetchall()
         cur.close()
         conn.close()
         
-        # 프론트엔드에서 넘어온 기준 좌표
-        center_lat = float(request.args.get('lat', 35.8115))
-        center_lng = float(request.args.get('lng', 127.1484))
-        
-        # 전북대 근방 마커들만 추출하여 안전하게 반환
         return jsonify(all_posts), 200
         
     except Exception as e:
-        print(f"❌ 백엔드 에러 발생: {str(e)}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        error_msg = str(e)
+        print(f"❌ 백엔드 에러 발생: {error_msg}")
+        return jsonify({"status": "error", "message": error_msg}), 500
 
-# 2. 터치 클릭 시 사용자가 직접 새 핀을 꼽는 API
+# 2. 사용자가 직접 새 핀을 꼽는 API
 @app.route('/api/posts', methods=['POST'])
 def create_post():
     try:
@@ -74,7 +81,9 @@ def create_post():
 
         return jsonify({"status": "success", "message": "핀 저장 완료", "id": new_id}), 201
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        error_msg = str(e)
+        print(f"❌ 핀 생성 에러 발생: {error_msg}")
+        return jsonify({"status": "error", "message": error_msg}), 500
 
 # 3. 전북대 20개 대량 랜덤 가짜 데이터 주입 스크립트
 @app.route('/api/admin/seed', methods=['POST'])
@@ -98,7 +107,6 @@ def seed_database():
         """
         cur.execute(create_table_query)
 
-        # 전북대학교 내부 주요 건물 리스트업
         jbnu_spots = [
             {"name": "전북대 중앙도서관", "lat": 35.8151, "lng": 127.1422},
             {"name": "전북대 진수당", "lat": 35.8132, "lng": 127.1492},
@@ -111,15 +119,13 @@ def seed_database():
         ]
         
         contents_pool = [
-            "여기 에어팟 한쪽 주웠어요!", "전공책 놓고 가신 분 분실물 보관소로 가세요", 
-            "벤치에 텀블러 있습니다.", "오늘 중도 고양이 귀엽네요", "노트북 어댑터 두고 가신 분?"
+            "여기 에어팟 한쪽 주웠어요!", "전공책놓고가신분 분실물보관소로", 
+            "벤치에 텀블러 있습니다.", "오늘 중도 고양이 귀엽네요", "노트북 어댑터 두고 가신 분"
         ]
         categories_pool = ["분실물", "습득물", "자유게시판", "질문"]
 
-        # 20개 랜덤 보정 주입
         for i in range(20):
             spot = random.choice(jbnu_spots)
-            # 건물 반경으로 랜덤 흩뿌리기
             rand_lat = spot["lat"] + random.uniform(-0.001, 0.001)
             rand_lng = spot["lng"] + random.uniform(-0.001, 0.001)
             
@@ -137,7 +143,9 @@ def seed_database():
         conn.close()
         return jsonify({"status": "success", "message": "20개 랜덤 데이터 생성 완료"}), 201
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        error_msg = str(e)
+        print(f"❌ 시드 데이터 생성 에러 발생: {error_msg}")
+        return jsonify({"status": "error", "message": error_msg}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
