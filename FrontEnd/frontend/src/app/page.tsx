@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
 import Script from 'next/script';
+import Link from 'next/link';
 
 declare global {
   interface Window {
@@ -317,6 +318,40 @@ export default function Home() {
   useEffect(() => {
     loadNearbyMarkers();
   }, [mockupData, activeFilter, mainMap]);
+
+  // 🌟 컴포넌트 마운트 시 백엔드에서 저장된 게시글 로드
+  useEffect(() => {
+    const loadPostsFromBackend = async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/posts');
+        if (response.ok) {
+          const posts = await response.json();
+          if (posts && posts.length > 0) {
+            // 백엔드 데이터를 MockPost 형식으로 변환
+            const convertedPosts: MockPost[] = posts.map((post: any) => ({
+              id: post.id,
+              category: post.category || '기타',
+              title: post.title || '제목 없음',
+              content: post.content || '',
+              place_name: post.place_name || '전북대 캠퍼스',
+              lat: post.lat || 35.8115,
+              lng: post.lng || 127.1484,
+              is_popular: Boolean(post.is_popular),
+              image_url: post.image_url || '',
+              likes: 0,
+              comments: []
+            }));
+            console.log(`✅ 백엔드에서 ${convertedPosts.length}개 게시글 로드됨`);
+            setMockupData(convertedPosts);
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ 백엔드 데이터 로드 실패, 로컬 데이터 사용:', err);
+      }
+    };
+
+    loadPostsFromBackend();
+  }, []); // 초기 마운트 시 한 번만 실행
 
   // 2. 마커 생성 및 렌더링 (순정 블루 마커)
   const loadNearbyMarkers = () => {
@@ -880,6 +915,15 @@ export default function Home() {
         >
           내위치
         </button>
+
+        {/* 관리 페이지 버튼 */}
+        <Link
+          href="/admin"
+          className="absolute bottom-10 right-24 z-30 bg-white p-4 rounded-full shadow-lg border border-gray-200 font-bold text-sm text-amber-600 hover:bg-amber-50 transition-all active:scale-95"
+          title="글 관리 페이지"
+        >
+          📋
+        </Link>
 
         {/* 하단 중앙 글쓰기 플로팅 버튼 */}
         <button
