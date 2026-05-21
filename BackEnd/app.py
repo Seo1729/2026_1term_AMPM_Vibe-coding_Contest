@@ -2,7 +2,7 @@
 import sys
 import os
 
-# 윈도우 환경에서 파이썬 내부 파일/문자열 처리 인코딩 시스템을 UTF-8로 강제 고정
+# 윈도우 환경 내부 문자열 처리 인코딩 강제 고정
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 
@@ -13,16 +13,14 @@ from psycopg2.extras import RealDictCursor
 import random
 
 app = Flask(__name__)
-# 프론트엔드 포트(3000) 접근 허용
 CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
 
-# DB 연결 함수 (연결 파라미터 인코딩 완벽 방어)
 def get_db_connection():
-    # 윈도우 계정명이나 환경 변수에 한글이 섞여 오류가 나는 것을 막기 위해 환경 설정 강제 초기화
     os.environ['PGCLIENTENCODING'] = 'utf-8'
     
+    # localhost 대신 명시적 IPv4 루프백 주소인 '127.0.0.1'을 사용하여 우회 차단
     conn = psycopg2.connect(
-        host="localhost",
+        host="127.0.0.1", 
         database="vibe_db",
         user="postgres",
         password="kuun0727",  # 리더님의 실제 DB 비밀번호
@@ -31,12 +29,11 @@ def get_db_connection():
     conn.set_client_encoding('UTF8')
     return conn
 
-# 1. 주변 핀 조회 API
+# [1. 주변 핀 조회 API]
 @app.route('/api/posts/nearby', methods=['GET'])
 def get_nearby_posts():
     try:
         print("📍 주변 마커 조회 요청 정상 수신!")
-        
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         
@@ -47,13 +44,12 @@ def get_nearby_posts():
         conn.close()
         
         return jsonify(all_posts), 200
-        
     except Exception as e:
         error_msg = str(e)
         print(f"❌ 백엔드 에러 발생: {error_msg}")
         return jsonify({"status": "error", "message": error_msg}), 500
 
-# 2. 사용자가 직접 새 핀을 꼽는 API
+# [2. 새 핀 생성 API]
 @app.route('/api/posts', methods=['POST'])
 def create_post():
     try:
@@ -81,70 +77,49 @@ def create_post():
 
         return jsonify({"status": "success", "message": "핀 저장 완료", "id": new_id}), 201
     except Exception as e:
-        error_msg = str(e)
-        print(f"❌ 핀 생성 에러 발생: {error_msg}")
-        return jsonify({"status": "error", "message": error_msg}), 500
-
-# 3. 전북대 20개 대량 랜덤 가짜 데이터 주입 스크립트
-@app.route('/api/admin/seed', methods=['POST'])
-def seed_database():
+        return jsonify({"status": "error", "message": str(e)}), 500
+# [1. 주변 핀 조회 API] - 프론트엔드의 lat, lng, radius 요청을 완벽히 수용하도록 수정
+@app.route('/api/posts/nearby', methods=['GET'])
+def get_nearby_posts():
     try:
+        # 프론트엔드가 보낸 Query String 매개변수 안전하게 수신 (기본값 설정)
+        current_lat = request.args.get('lat', default=35.8115, type=float)
+        current_lng = request.args.get('lng', default=127.1484, type=float)
+        radius = request.args.get('radius', default=1000, type=float) # 미터 단위 (예: 1500m)
+        
+        print(f"📍 주변 마커 조회 요청 수신 -> 기준위치: ({current_lat}, {current_lng}), 검색반경: {radius}m")
+        
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
         
-        # 기존 posts 테이블 초기화 및 재생성
-        cur.execute("DROP TABLE IF EXISTS posts;")
-        create_table_query = """
-            CREATE TABLE posts (
-                id SERIAL PRIMARY KEY,
-                content TEXT NOT NULL,
-                place_name VARCHAR(100),
-                category VARCHAR(50),
-                lat NUMERIC(10, 7) NOT NULL,
-                lng NUMERIC(10, 7) NOT NULL,
-                user_id INTEGER DEFAULT 1
-            );
+        # PostgreSQL에서 위도/경도 간 거리를 미터 단위로 계산하는 하버사인(Haversine) 유사 공식 적용
+        # 지구 반지름 수치(6371000m)를 활용하여 radius 이내의 데이터만 필터링합니다.
+        query = """
+            SELECT id, content, place_name, category, 
+                   CAST(lat AS FLOAT) as lat, CAST(lng AS FLOAT) as lng, user_id,
+                   (6371000 * acos(
+                       cos(radians(%s)) * cos(radians(CAST(lat AS FLOAT))) * cos(radians(CAST(lng AS FLOAT)) - radians(%s)) + 
+                       sin(radians(%s)) * sin(radians(CAST(lat AS FLOAT)))
+                   )) AS distance
+            FROM posts
+            WHERE (6371000 * acos(
+                       cos(radians(%s)) * cos(radians(CAST(lat AS FLOAT))) * cos(radians(CAST(lng AS FLOAT)) - radians(%s)) + 
+                       sin(radians(%s)) * sin(radians(CAST(lat AS FLOAT)))
+                   )) <= %s;
         """
-        cur.execute(create_table_query)
-
-        jbnu_spots = [
-            {"name": "전북대 중앙도서관", "lat": 35.8151, "lng": 127.1422},
-            {"name": "전북대 진수당", "lat": 35.8132, "lng": 127.1492},
-            {"name": "전북대 정문", "lat": 35.8115, "lng": 127.1484},
-            {"name": "전북대 구정문", "lat": 35.8165, "lng": 127.1415},
-            {"name": "전북대 상대 건물", "lat": 35.8140, "lng": 127.1445},
-            {"name": "전북대 공대 7호관", "lat": 35.8182, "lng": 127.1401},
-            {"name": "전북대 인문대학", "lat": 35.8122, "lng": 127.1465},
-            {"name": "전북대 제1학생회관", "lat": 35.8145, "lng": 127.1432}
-        ]
         
-        contents_pool = [
-            "여기 에어팟 한쪽 주웠어요!", "전공책놓고가신분 분실물보관소로", 
-            "벤치에 텀블러 있습니다.", "오늘 중도 고양이 귀엽네요", "노트북 어댑터 두고 가신 분"
-        ]
-        categories_pool = ["분실물", "습득물", "자유게시판", "질문"]
-
-        for i in range(20):
-            spot = random.choice(jbnu_spots)
-            rand_lat = spot["lat"] + random.uniform(-0.001, 0.001)
-            rand_lng = spot["lng"] + random.uniform(-0.001, 0.001)
-            
-            content = f"[{i+1}번 핀] " + random.choice(contents_pool)
-            category = random.choice(categories_pool)
-            place_name = spot["name"] + " 근처"
-
-            cur.execute(
-                "INSERT INTO posts (content, place_name, category, lat, lng, user_id) VALUES (%s, %s, %s, %s, %s, 1);",
-                (content, place_name, category, rand_lat, rand_lng)
-            )
-
-        conn.commit()
+        # 파라미터 순서대로 매핑하여 안전하게 SQL 인젝션 방어 실행
+        cur.execute(query, (current_lat, current_lng, current_lat, current_lat, current_lng, current_lat, radius))
+        all_posts = cur.fetchall()
+        
         cur.close()
         conn.close()
-        return jsonify({"status": "success", "message": "20개 랜덤 데이터 생성 완료"}), 201
+        
+        return jsonify(all_posts), 200
+        
     except Exception as e:
         error_msg = str(e)
-        print(f"❌ 시드 데이터 생성 에러 발생: {error_msg}")
+        print(f"❌ 백엔드 계산 에러 발생: {error_msg}")
         return jsonify({"status": "error", "message": error_msg}), 500
 
 if __name__ == '__main__':
