@@ -229,9 +229,15 @@ def update_post(post_id):
         content = request.form.get('content')
         category = request.form.get('category')
         place_name = request.form.get('place_name')
+        likes = request.form.get('likes', '0')
+        
+        try:
+            likes = int(likes)
+        except:
+            likes = 0
         
         # 📷 이미지 파일 처리 (선택사항) - Base64로 인코딩
-        update_data = {'title': title, 'content': content, 'category': category, 'place_name': place_name}
+        update_data = {'title': title, 'content': content, 'category': category, 'place_name': place_name, 'likes': likes}
         image_file = request.files.get('image')
         if image_file:
             file_content = image_file.read()
@@ -246,21 +252,21 @@ def update_post(post_id):
         if 'image_url' in update_data:
             cur.execute('''
                 UPDATE posts 
-                SET title = ?, content = ?, category = ?, place_name = ?, image_url = ?
+                SET title = ?, content = ?, category = ?, place_name = ?, likes = ?, image_url = ?
                 WHERE id = ?
-            ''', (title, content, category, place_name, update_data['image_url'], post_id))
+            ''', (title, content, category, place_name, likes, update_data['image_url'], post_id))
         else:
             cur.execute('''
                 UPDATE posts 
-                SET title = ?, content = ?, category = ?, place_name = ?
+                SET title = ?, content = ?, category = ?, place_name = ?, likes = ?
                 WHERE id = ?
-            ''', (title, content, category, place_name, post_id))
+            ''', (title, content, category, place_name, likes, post_id))
         
         conn.commit()
         cur.close()
         conn.close()
         
-        print(f"✅ 게시글 수정 완료 - ID: {post_id}")
+        print(f"✅ 게시글 수정 완료 - ID: {post_id}, 좋아요: {likes}")
         return jsonify({"status": "success", "message": "게시글 수정 완료"}), 200
         
     except Exception as e:
@@ -321,6 +327,40 @@ def toggle_popular(post_id):
         
     except Exception as e:
         print(f"❌ 인기글 토글 에러: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# =================================================================
+# [6-1. 좋아요 증가 API]
+# =================================================================
+@app.route('/api/posts/<int:post_id>/like', methods=['PUT'])
+def increment_like(post_id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # 현재 좋아요 수 조회
+        cur.execute('SELECT likes FROM posts WHERE id = ?', (post_id,))
+        result = cur.fetchone()
+        
+        if not result:
+            return jsonify({"status": "error", "message": "게시글을 찾을 수 없습니다."}), 404
+        
+        current_likes = result[0] if result[0] is not None else 0
+        new_likes = current_likes + 1
+        
+        # 좋아요 수 업데이트 (10개 이상이면 자동 인기글)
+        new_is_popular = 1 if new_likes >= 10 else 0
+        cur.execute('UPDATE posts SET likes = ?, is_popular = ? WHERE id = ?', (new_likes, new_is_popular, post_id))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        print(f"✅ 좋아요 증가 - ID: {post_id}, 좋아요 수: {new_likes}")
+        return jsonify({"status": "success", "likes": new_likes, "is_popular": bool(new_is_popular)}), 200
+        
+    except Exception as e:
+        print(f"❌ 좋아요 증가 에러: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # =================================================================

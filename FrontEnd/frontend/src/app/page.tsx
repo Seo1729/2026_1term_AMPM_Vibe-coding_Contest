@@ -1,7 +1,11 @@
 'use client';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useSyncExternalStore } from 'react';
 import Script from 'next/script';
 import Link from 'next/link';
+
+const subscribeToHydration = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
 
 declare global {
   interface Window {
@@ -32,6 +36,11 @@ interface MockPost {
 }
 
 export default function Home() {
+  const isMounted = useSyncExternalStore(
+    subscribeToHydration,
+    getClientSnapshot,
+    getServerSnapshot
+  );
   // 지도 인스턴스들
   const [mainMap, setMainMap] = useState<any>(null);
   const [miniMap, setMiniMap] = useState<any>(null);
@@ -345,7 +354,7 @@ const initMainMap = () => {
               lng: post.lng || 127.1484,
               is_popular: Boolean(post.is_popular),
               image_url: post.image_url || '',
-              likes: 0,
+              likes: post.likes || 0,
               comments: []
             }));
             console.log(`✅ 백엔드에서 ${convertedPosts.length}개 게시글 로드됨`);
@@ -490,23 +499,63 @@ const initMainMap = () => {
     alert('🗑️ 댓글이 깨끗하게 삭제되었습니다!');
   };
 
-  // 🎯 추천(좋아요) 기능 - 중복 추천 방지
-  const handleLikeIncrement = () => {
-  if (!selectedPost || likedPostIds.includes(selectedPost.id)) return;
+  // 🎯 추천(좋아요) 기능 - 중복 추천 방지 + 백엔드 저장
+  const handleLikeIncrement = async () => {
+    if (!selectedPost || likedPostIds.includes(selectedPost.id)) return;
 
-  const newLikes = selectedPost.likes + 1;
-  const newIsPopular = newLikes >= 10; // ⭐ 10개 이상이면 자동 인기글
-  const updatedPost = { ...selectedPost, likes: newLikes, is_popular: newIsPopular };
-  
-  const updatedData = mockupData.map(post =>
-    post.id === selectedPost.id ? updatedPost : post
-  );
+    try {
+      // 백엔드에 좋아요 요청
+      const response = await fetch(`http://127.0.0.1:5000/api/posts/${selectedPost.id}/like`, {
+        method: 'PUT',
+      });
 
-  setSelectedPost(updatedPost);
-  setMockupData(updatedData);
-  setLikedPostIds([...likedPostIds, selectedPost.id]);
-  alert('👍 게시글을 추천했습니다!');
-};
+      if (response.ok) {
+        const result = await response.json();
+        const newLikes = result.likes;
+        const newIsPopular = result.is_popular;
+        const updatedPost = { ...selectedPost, likes: newLikes, is_popular: newIsPopular };
+        
+        const updatedData = mockupData.map(post =>
+          post.id === selectedPost.id ? updatedPost : post
+        );
+
+        setSelectedPost(updatedPost);
+        setMockupData(updatedData);
+        setLikedPostIds([...likedPostIds, selectedPost.id]);
+        alert('👍 게시글을 추천했습니다!');
+      } else {
+        console.warn('⚠️ 백엔드 좋아요 저장 실패, 로컬만 업데이트합니다');
+        // 백엔드 실패 시 로컬 업데이트
+        const newLikes = selectedPost.likes + 1;
+        const newIsPopular = newLikes >= 10;
+        const updatedPost = { ...selectedPost, likes: newLikes, is_popular: newIsPopular };
+        
+        const updatedData = mockupData.map(post =>
+          post.id === selectedPost.id ? updatedPost : post
+        );
+
+        setSelectedPost(updatedPost);
+        setMockupData(updatedData);
+        setLikedPostIds([...likedPostIds, selectedPost.id]);
+        alert('👍 게시글을 추천했습니다!');
+      }
+    } catch (err) {
+      console.warn('⚠️ 백엔드 연결 실패, 로컬만 업데이트합니다:', err);
+      // 백엔드 연결 실패 시 로컬 업데이트
+      const newLikes = selectedPost.likes + 1;
+      const newIsPopular = newLikes >= 10;
+      const updatedPost = { ...selectedPost, likes: newLikes, is_popular: newIsPopular };
+      
+      const updatedData = mockupData.map(post =>
+        post.id === selectedPost.id ? updatedPost : post
+      );
+
+      setSelectedPost(updatedPost);
+      setMockupData(updatedData);
+      setLikedPostIds([...likedPostIds, selectedPost.id]);
+      alert('👍 게시글을 추천했습니다!');
+    }
+  };
 
 // 1. 메인 지도 초기화 (GPS 실시간 위치)
   const initMiniMap = () => {
@@ -643,6 +692,10 @@ const initMainMap = () => {
       alert('❌ 게시글 작성 중 오류가 발생했습니다.');
     }
   };
+
+  if (!isMounted) {
+    return <main className="w-screen h-screen bg-gray-50" suppressHydrationWarning />;
+  }
 
   return (
     <main className="w-screen h-screen flex bg-gray-50 overflow-hidden font-sans relative" suppressHydrationWarning>

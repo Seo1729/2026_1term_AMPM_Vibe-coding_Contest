@@ -1,6 +1,10 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+
+const subscribeToHydration = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
 
 interface Post {
   id: number;
@@ -18,6 +22,11 @@ interface Post {
 }
 
 export default function AdminPage() {
+  const isMounted = useSyncExternalStore(
+    subscribeToHydration,
+    getClientSnapshot,
+    getServerSnapshot
+  );
   const [posts, setPosts] = useState<Post[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editData, setEditData] = useState<Partial<Post>>({});
@@ -95,6 +104,7 @@ export default function AdminPage() {
       formData.append('content', editData.content as string);
       formData.append('category', editData.category as string);
       formData.append('place_name', editData.place_name as string);
+      formData.append('likes', String(editData.likes || 0));
       if (editImageFile) {
         formData.append('image', editImageFile);
       }
@@ -142,6 +152,10 @@ export default function AdminPage() {
     : posts;
 
   const categories = ['분실물', '습득물', '자유게시판', '질문'];
+
+  if (!isMounted) {
+    return <main className="min-h-screen bg-gray-50" suppressHydrationWarning />;
+  }
 
   return (
     <main className="min-h-screen bg-gray-50 p-8">
