@@ -99,6 +99,7 @@ def get_nearby_posts():
 def create_post():
     try:
         # 프론트엔드가 FormData 형식으로 데이터를 쏘기 때문에 form.get()으로 수집합니다.
+        title = request.form.get('title', '제목 없음')
         content = request.form.get('content')
         place_name = request.form.get('place_name', '전북대 캠퍼스')
         category = request.form.get('category', '기타')
@@ -120,10 +121,10 @@ def create_post():
         
         # 테이블 구조에 맞춰 image_url까지 한 번에 인서트
         insert_query = """
-            INSERT INTO posts (content, place_name, category, lat, lng, user_id, image_url)
-            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id;
+            INSERT INTO posts (title, content, place_name, category, lat, lng, user_id, image_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id;
         """
-        cur.execute(insert_query, (content, place_name, category, lat, lng, user_id, image_url))
+        cur.execute(insert_query, (title, content, place_name, category, lat, lng, user_id, image_url))
         new_id = cur.fetchone()[0]
         conn.commit()
         cur.close()
@@ -147,13 +148,15 @@ def seed_database():
         create_table_query = """
             CREATE TABLE posts (
                 id SERIAL PRIMARY KEY,
+                title VARCHAR(255),
                 content TEXT NOT NULL,
                 place_name VARCHAR(100),
                 category VARCHAR(50),
                 lat NUMERIC(10, 7) NOT NULL,
                 lng NUMERIC(10, 7) NOT NULL,
                 user_id INTEGER DEFAULT 1,
-                image_url TEXT
+                image_url TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """
         cur.execute(create_table_query)
@@ -175,13 +178,14 @@ def seed_database():
             spot = random.choice(jbnu_spots)
             rand_lat = spot["lat"] + random.uniform(-0.001, 0.001)
             rand_lng = spot["lng"] + random.uniform(-0.001, 0.001)
-            content = f"[{i+1}번 핀] " + random.choice(contents_pool)
+            title = f"[{i+1}번 핀] " + random.choice(contents_pool).split("!")[0]
+            content = random.choice(contents_pool)
             category = random.choice(categories_pool)
             place_name = spot["name"] + " 근처"
 
             cur.execute(
-                "INSERT INTO posts (content, place_name, category, lat, lng, user_id, image_url) VALUES (%s, %s, %s, %s, %s, 1, NULL);",
-                (content, place_name, category, rand_lat, rand_lng)
+                "INSERT INTO posts (title, content, place_name, category, lat, lng, user_id, image_url) VALUES (%s, %s, %s, %s, %s, %s, 1, NULL);",
+                (title, content, place_name, category, rand_lat, rand_lng)
             )
 
         conn.commit()

@@ -313,6 +313,11 @@ export default function Home() {
     }
   }, [mainMap]);
 
+  // mockupData 또는 activeFilter가 변경되면 마커 업데이트
+  useEffect(() => {
+    loadNearbyMarkers();
+  }, [mockupData, activeFilter, mainMap]);
+
   // 2. 마커 생성 및 렌더링 (순정 블루 마커)
   const loadNearbyMarkers = () => {
   if (!mainMap) return;
@@ -320,26 +325,42 @@ export default function Home() {
   mainMarkersRef.current.forEach(m => m.setMap(null));
   mainMarkersRef.current = [];
 
-  // 🎨 카테고리별 색상 정의
   const categoryColors: Record<string, string> = {
-    '분실물':    '#EF4444', // 빨강
-    '습득물':    '#22C55E', // 초록
-    '자유게시판': '#F59E0B', // 노랑
-    '질문':      '#3B82F6', // 파랑
+    '분실물':    '#EF4444',
+    '습득물':    '#22C55E',
+    '자유게시판': '#F59E0B',
+    '질문':      '#3B82F6',
   };
 
-  // SVG 핀 생성 함수
-  const createSvgMarker = (color: string) => {
-    const svg = `
+  const createSvgMarker = (color: string, isPopular: boolean) => {
+    // ⭐ 인기글 전용 별 마커
+    const popularSvg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+        <polygon points="18,2 22,13 34,13 25,20 28,32 18,25 8,32 11,20 2,13 14,13"
+          fill="#F59E0B" stroke="white" stroke-width="2"/>
+      </svg>
+    `;
+
+    // 📍 일반 물방울 마커
+    const normalSvg = `
       <svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
         <path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 24 16 24s16-14 16-24C32 7.163 24.837 0 16 0z"
           fill="${color}" stroke="white" stroke-width="2"/>
         <circle cx="16" cy="16" r="7" fill="white" opacity="0.9"/>
       </svg>
     `;
+
+    const svg = isPopular ? popularSvg : normalSvg;
     const encoded = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-    const imageSize = new window.kakao.maps.Size(32, 40);
-    const imageOption = { offset: new window.kakao.maps.Point(16, 40) };
+
+    // ✅ 인기글이면 별 크기에 맞게, 일반이면 핀 크기에 맞게
+    const imageSize = isPopular
+      ? new window.kakao.maps.Size(36, 36)
+      : new window.kakao.maps.Size(32, 40);
+    const imageOption = isPopular
+      ? { offset: new window.kakao.maps.Point(18, 18) }
+      : { offset: new window.kakao.maps.Point(16, 40) };
+
     return new window.kakao.maps.MarkerImage(encoded, imageSize, imageOption);
   };
 
@@ -351,8 +372,8 @@ export default function Home() {
 
   filteredData.forEach((post: MockPost) => {
     const markerPosition = new window.kakao.maps.LatLng(post.lat, post.lng);
-    const color = categoryColors[post.category] ?? '#6366F1'; // 기본 인디고
-    const markerImage = createSvgMarker(color);
+    const color = categoryColors[post.category] ?? '#6366F1';
+    const markerImage = createSvgMarker(color, post.is_popular); // ✅ is_popular 전달
 
     const marker = new window.kakao.maps.Marker({
       position: markerPosition,
@@ -374,34 +395,6 @@ export default function Home() {
   mainMarkersRef.current = newMarkers;
 };
 
-
-  useEffect(() => {
-    loadNearbyMarkers();
-  }, [mainMap, activeFilter, mockupData]);
-
-  // 3. 🎯 중복 추천 방지 핸들러 고도화 (유저당 1회 제한)
-  const handleLikeIncrement = () => {
-    if (!selectedPost) return;
-    
-    // 이미 이 게시물을 추천한 이력이 있다면 튕겨내기
-    if (likedPostIds.includes(selectedPost.id)) {
-      alert('⚠️ 이미 추천하신 게시글입니다. (게시글당 1회만 가능)');
-      return;
-    }
-    
-    const updatedData = mockupData.map(post => {
-      if (post.id === selectedPost.id) {
-        const newLikes = post.likes + 1;
-        setSelectedPost({ ...post, likes: newLikes });
-        return { ...post, likes: newLikes };
-      }
-      return post;
-    });
-    
-    setMockupData(updatedData);
-    setLikedPostIds([...likedPostIds, selectedPost.id]); // 추천 리스트 풀에 등록
-    alert('👍 해당 동네 소식을 정상적으로 추천했습니다!');
-  };
 
   // 4. 🎯 dc형 익명 댓글 스레드 생성 (닉네임, 비번 연계)
   const handleCommentSubmit = (e: React.FormEvent) => {
@@ -453,6 +446,24 @@ export default function Home() {
 
     setMockupData(updatedData);
     alert('🗑️ 댓글이 깨끗하게 삭제되었습니다!');
+  };
+
+  // 🎯 추천(좋아요) 기능 - 중복 추천 방지
+  const handleLikeIncrement = () => {
+    if (!selectedPost || likedPostIds.includes(selectedPost.id)) return;
+
+    // 선택된 게시글의 likes 증가
+    const updatedPost = { ...selectedPost, likes: selectedPost.likes + 1 };
+    
+    // 전체 mockupData에서도 업데이트
+    const updatedData = mockupData.map(post =>
+      post.id === selectedPost.id ? updatedPost : post
+    );
+
+    setSelectedPost(updatedPost); // 현재 선택된 게시글 즉시 업데이트
+    setMockupData(updatedData); // 전체 데이터 업데이트
+    setLikedPostIds([...likedPostIds, selectedPost.id]); // 추천 이력에 추가
+    alert('👍 게시글을 추천했습니다!');
   };
 
   // 5. 미니맵 초기화 및 반경 50m 제한 기능
@@ -548,38 +559,46 @@ export default function Home() {
         formData.append('image', imageFile);
       }
 
-      const response = await fetch('http://127.0.0.1:5000/api/posts', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (response.ok || true) { 
-        alert('📍 성공적으로 게시글을 발행했습니다!');
-        
-        const newLocalPost: MockPost = {
-          id: mockupData.length + 300,
-          category: category,
-          title: title,
-          content: content,
-          place_name: derivedPlaceName || '전북대 교내',
-          lat: selectedCoords.lat,
-          lng: selectedCoords.lng,
-          is_popular: false,
-          image_url: imagePreview || '',
-          likes: 0,
-          comments: []
-        };
-        setMockupData([newLocalPost, ...mockupData]);
-        
-        setTitle('');
-        setContent('');
-        setImageFile(null);
-        setImagePreview('');
-        setIsSidebarOpen(false); 
-        setMiniMap(null); 
+      // 백엔드 API 호출 시도 (선택사항)
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/posts', {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) {
+          console.warn('⚠️ 백엔드 저장 실패, 로컬 메모리에만 저장합니다');
+        }
+      } catch (apiErr) {
+        console.warn('⚠️ 백엔드 연결 실패, 로컬 메모리에만 저장합니다:', apiErr);
       }
+
+      // 로컬 메모리에 게시글 추가 (백엔드 상태와 무관하게 항상 실행)
+      alert('📍 성공적으로 게시글을 발행했습니다!');
+      
+      const newLocalPost: MockPost = {
+        id: mockupData.length + 300,
+        category: category,
+        title: title,
+        content: content,
+        place_name: derivedPlaceName || '전북대 교내',
+        lat: selectedCoords.lat,
+        lng: selectedCoords.lng,
+        is_popular: false,
+        image_url: imagePreview || '',
+        likes: 0,
+        comments: []
+      };
+      setMockupData([newLocalPost, ...mockupData]);
+      
+      setTitle('');
+      setContent('');
+      setImageFile(null);
+      setImagePreview('');
+      setIsSidebarOpen(false); 
+      setMiniMap(null);
     } catch (err) {
-      console.error(err);
+      console.error('❌ 게시글 작성 중 오류:', err);
+      alert('❌ 게시글 작성 중 오류가 발생했습니다.');
     }
   };
 
