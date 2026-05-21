@@ -14,7 +14,7 @@ def get_db_connection():
         host="localhost",
         database="vibe_db",
         user="postgres",
-        password="password",  # 리더님의 실제 DB 비밀번호
+        password="kuun0727",  # 리더님의 실제 DB 비밀번호
         port="5432"
     )
 
