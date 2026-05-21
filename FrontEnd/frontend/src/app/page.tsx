@@ -86,7 +86,7 @@ export default function Home() {
       lat: 35.8145,
       lng: 127.1472,
       is_popular: false,
-      image_url: 'https://images.unsplash.com/photo-1588444837495-c6cfeb53ca91?w=500&q=80',
+      image_url: 'https://images.unsplash.com/photo-1606220945770-b5b6c2c55bf1?w=500&q=80',
       likes: 12,
       comments: [
         { id: 1, nickname: '에어팟구조대', passwordHash: '1234', text: '저 아까 진수당 계단 지나갈 때 본 것 같아요!' },
@@ -279,14 +279,16 @@ export default function Home() {
     </style>
   `;
 
-  // 1. 메인 지도 초기화
-  const initMainMap = () => {
-    if (window.kakao && window.kakao.maps) {
-      const container = document.getElementById('main-map');
-      if (!container) return;
+  // 1. 메인 지도 초기화 (GPS 실시간 위치)
+const initMainMap = () => {
+  if (window.kakao && window.kakao.maps) {
+    const container = document.getElementById('main-map');
+    if (!container) return;
 
+    const setupMap = (lat: number, lng: number) => {
+      setCurrentCoords({ lat, lng });
       const options = {
-        center: new window.kakao.maps.LatLng(currentCoords.lat, currentCoords.lng),
+        center: new window.kakao.maps.LatLng(lat, lng),
         level: 4,
       };
       const map = new window.kakao.maps.Map(container, options);
@@ -294,25 +296,30 @@ export default function Home() {
 
       const overlay = new window.kakao.maps.CustomOverlay({
         map: map,
-        position: new window.kakao.maps.LatLng(currentCoords.lat, currentCoords.lng),
+        position: new window.kakao.maps.LatLng(lat, lng),
         content: getMyLocationContent(),
         xAnchor: 0.5,
         yAnchor: 0.5,
         zIndex: 5
       });
       myLocationOverlayRef.current = overlay;
-    }
-  };
+    };
 
-  useEffect(() => {
-    if (mainMap) {
-      const jbnuPos = new window.kakao.maps.LatLng(35.8115, 127.1484);
-      mainMap.setCenter(jbnuPos);
-      if (myLocationOverlayRef.current) {
-        myLocationOverlayRef.current.setPosition(jbnuPos);
-      }
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setupMap(position.coords.latitude, position.coords.longitude);
+        },
+        () => {
+          setupMap(35.8115, 127.1484); // GPS 거부 시 전북대 기본값
+        }
+      );
+    } else {
+      setupMap(35.8115, 127.1484);
     }
-  }, [mainMap]);
+  }
+};
+
 
   // mockupData 또는 activeFilter가 변경되면 마커 업데이트
   useEffect(() => {
@@ -485,76 +492,76 @@ export default function Home() {
 
   // 🎯 추천(좋아요) 기능 - 중복 추천 방지
   const handleLikeIncrement = () => {
-    if (!selectedPost || likedPostIds.includes(selectedPost.id)) return;
+  if (!selectedPost || likedPostIds.includes(selectedPost.id)) return;
 
-    // 선택된 게시글의 likes 증가
-    const updatedPost = { ...selectedPost, likes: selectedPost.likes + 1 };
-    
-    // 전체 mockupData에서도 업데이트
-    const updatedData = mockupData.map(post =>
-      post.id === selectedPost.id ? updatedPost : post
-    );
+  const newLikes = selectedPost.likes + 1;
+  const newIsPopular = newLikes >= 10; // ⭐ 10개 이상이면 자동 인기글
+  const updatedPost = { ...selectedPost, likes: newLikes, is_popular: newIsPopular };
+  
+  const updatedData = mockupData.map(post =>
+    post.id === selectedPost.id ? updatedPost : post
+  );
 
-    setSelectedPost(updatedPost); // 현재 선택된 게시글 즉시 업데이트
-    setMockupData(updatedData); // 전체 데이터 업데이트
-    setLikedPostIds([...likedPostIds, selectedPost.id]); // 추천 이력에 추가
-    alert('👍 게시글을 추천했습니다!');
-  };
+  setSelectedPost(updatedPost);
+  setMockupData(updatedData);
+  setLikedPostIds([...likedPostIds, selectedPost.id]);
+  alert('👍 게시글을 추천했습니다!');
+};
 
-  // 5. 미니맵 초기화 및 반경 50m 제한 기능
+// 1. 메인 지도 초기화 (GPS 실시간 위치)
   const initMiniMap = () => {
-    const container = document.getElementById('mini-map');
-    if (!container || miniMap) return;
+  const container = document.getElementById('mini-map');
+  if (!container || miniMap) return;
 
-    const options = {
-      center: new window.kakao.maps.LatLng(currentCoords.lat, currentCoords.lng),
-      level: 2,
-    };
-    const mMap = new window.kakao.maps.Map(container, options);
-    setMiniMap(mMap);
-
-    const centerPos = new window.kakao.maps.LatLng(currentCoords.lat, currentCoords.lng);
-
-    const circle = new window.kakao.maps.Circle({
-      center: centerPos,
-      radius: 50,
-      weight: 2,
-      strokeColor: '#4f46e5',
-      strokeOpacity: 0.8,
-      strokeStyle: 'dashed',
-      fillColor: '#4f46e5',
-      fillOpacity: 0.15
-    });
-    circle.setMap(mMap);
-    miniCircleRef.current = circle;
-
-    const marker = new window.kakao.maps.Marker({
-      position: centerPos,
-      draggable: true
-    });
-    marker.setMap(mMap);
-    miniMarkerRef.current = marker;
-
-    setSelectedCoords({ lat: currentCoords.lat, lng: currentCoords.lng });
-    updateAddress(currentCoords.lng, currentCoords.lat);
-
-    window.kakao.maps.event.addListener(marker, 'dragend', function() {
-      const currentMarkerPos = marker.getPosition();
-      const polyline = new window.kakao.maps.Polyline({
-        path: [centerPos, currentMarkerPos]
-      });
-
-      if (polyline.getLength() > 50) {
-        alert("📍 반경 50m 이내에만 핀을 꽂을 수 있습니다!");
-        marker.setPosition(centerPos);
-        setSelectedCoords({ lat: currentCoords.lat, lng: currentCoords.lng });
-        updateAddress(currentCoords.lng, currentCoords.lat);
-      } else {
-        setSelectedCoords({ lat: currentMarkerPos.getLat(), lng: currentMarkerPos.getLng() });
-        updateAddress(currentMarkerPos.getLng(), currentMarkerPos.getLat());
-      }
-    });
+  const options = {
+    center: new window.kakao.maps.LatLng(currentCoords.lat, currentCoords.lng),
+    level: 2,
   };
+  const mMap = new window.kakao.maps.Map(container, options);
+  setMiniMap(mMap);
+
+  const centerPos = new window.kakao.maps.LatLng(currentCoords.lat, currentCoords.lng);
+
+  const circle = new window.kakao.maps.Circle({
+    center: centerPos,
+    radius: 50,
+    weight: 2,
+    strokeColor: '#4f46e5',
+    strokeOpacity: 0.8,
+    strokeStyle: 'dashed',
+    fillColor: '#4f46e5',
+    fillOpacity: 0.15
+  });
+  circle.setMap(mMap);
+  miniCircleRef.current = circle;
+
+  const marker = new window.kakao.maps.Marker({
+    position: centerPos,
+    draggable: true
+  });
+  marker.setMap(mMap);
+  miniMarkerRef.current = marker;
+
+  setSelectedCoords({ lat: currentCoords.lat, lng: currentCoords.lng });
+  updateAddress(currentCoords.lng, currentCoords.lat);
+
+  window.kakao.maps.event.addListener(marker, 'dragend', function() {
+    const currentMarkerPos = marker.getPosition();
+    const polyline = new window.kakao.maps.Polyline({
+      path: [centerPos, currentMarkerPos]
+    });
+    if (polyline.getLength() > 50) {
+      alert("📍 반경 50m 이내에만 핀을 꽂을 수 있습니다!");
+      marker.setPosition(centerPos);
+      setSelectedCoords({ lat: currentCoords.lat, lng: currentCoords.lng });
+      updateAddress(currentCoords.lng, currentCoords.lat);
+    } else {
+      setSelectedCoords({ lat: currentMarkerPos.getLat(), lng: currentMarkerPos.getLng() });
+      updateAddress(currentMarkerPos.getLng(), currentMarkerPos.getLat());
+    }
+  });
+};
+
 
   const updateAddress = (lng: number, lat: number) => {
     const geocoder = new window.kakao.maps.services.Geocoder();
@@ -780,10 +787,23 @@ export default function Home() {
                 </div>
 
                 {selectedPost.image_url && (
-                  <div className="w-full h-44 overflow-hidden rounded-2xl border border-gray-100 shadow-sm">
-                    <img src={selectedPost.image_url} alt="첨부사진" className="w-full h-full object-cover" />
-                  </div>
-                )}
+  <div className="w-full h-44 overflow-hidden rounded-2xl border border-gray-100 shadow-sm">
+    <img
+      src={selectedPost.image_url}
+      alt="첨부사진"
+      className="w-full h-full object-cover"
+      onError={(e) => {
+        const target = e.target as HTMLImageElement;
+        target.style.display = 'none'; // 깨진 이미지 숨기기
+        target.parentElement!.innerHTML = `
+          <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f3f4f6;color:#9ca3af;font-size:12px;font-weight:600;">
+            🖼️ 이미지를 불러올 수 없습니다
+          </div>
+        `;
+      }}
+    />
+  </div>
+)}
 
                 <div className="bg-gray-50/70 p-4 rounded-2xl border border-gray-100 text-sm leading-relaxed text-gray-700 font-medium whitespace-pre-wrap min-h-[100px]">
                   {selectedPost.content}
@@ -916,11 +936,12 @@ export default function Home() {
           내위치
         </button>
 
-        {/* 관리 페이지 버튼 */}
+        {/* 관리 페이지 버튼 - 왼쪽 위 구석 1/4원만 보이게 */}
         <Link
           href="/admin"
-          className="absolute bottom-10 right-24 z-30 bg-white p-4 rounded-full shadow-lg border border-gray-200 font-bold text-sm text-amber-600 hover:bg-amber-50 transition-all active:scale-95"
+          className="fixed top-0 left-0 z-30 bg-white rounded-full shadow-lg border border-gray-200 font-bold text-xl text-amber-600 hover:bg-amber-50 transition-all active:scale-95"
           title="글 관리 페이지"
+          style={{ width: '60px', height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'center', clipPath: 'polygon(100% 0%, 100% 100%, 0% 100%)' }}
         >
           📋
         </Link>

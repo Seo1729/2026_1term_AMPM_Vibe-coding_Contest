@@ -4,6 +4,7 @@ import os
 import math
 import sqlite3
 import json
+import base64
 from datetime import datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -48,9 +49,16 @@ def init_db():
             user_id INTEGER DEFAULT 1,
             image_url TEXT,
             is_popular INTEGER DEFAULT 0,
+            likes INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    # 기존 테이블에 likes 컬럼이 없으면 추가
+    try:
+        cur.execute('ALTER TABLE posts ADD COLUMN likes INTEGER DEFAULT 0')
+    except:
+        pass  # 컬럼이 이미 있으면 무시
     
     conn.commit()
     conn.close()
@@ -76,7 +84,7 @@ def get_all_posts():
         # 모든 게시글 조회
         cur.execute('''
             SELECT id, title, content, place_name, category, 
-                   lat, lng, user_id, image_url, is_popular, created_at
+                   lat, lng, user_id, image_url, is_popular, likes, created_at
             FROM posts
             ORDER BY created_at DESC
         ''')
@@ -94,6 +102,7 @@ def get_all_posts():
                 'user_id': row['user_id'],
                 'image_url': row['image_url'],
                 'is_popular': row['is_popular'],
+                'likes': row['likes'] if row['likes'] else 0,
                 'created_at': row['created_at']
             })
         
@@ -120,11 +129,15 @@ def create_post():
         lng = float(request.form.get('lng'))
         user_id = request.form.get('user_id', 1)
 
-        # 📷 이미지 파일 처리 (선택사항)
+        # 📷 이미지 파일 처리 (선택사항) - Base64로 인코딩
         image_url = None
         image_file = request.files.get('image')
         if image_file:
-            image_url = f"https://dummyimage.com/400x300/4f46e5/ffffff.png&text={image_file.filename}"
+            file_content = image_file.read()
+            b64_string = base64.b64encode(file_content).decode('utf-8')
+            # MIME 타입 결정
+            mime_type = image_file.content_type or 'image/jpeg'
+            image_url = f"data:{mime_type};base64,{b64_string}"
 
         if not content:
             return jsonify({"status": "error", "message": "내용을 입력해주세요."}), 400
@@ -217,15 +230,31 @@ def update_post(post_id):
         category = request.form.get('category')
         place_name = request.form.get('place_name')
         
+        # 📷 이미지 파일 처리 (선택사항) - Base64로 인코딩
+        update_data = {'title': title, 'content': content, 'category': category, 'place_name': place_name}
+        image_file = request.files.get('image')
+        if image_file:
+            file_content = image_file.read()
+            b64_string = base64.b64encode(file_content).decode('utf-8')
+            mime_type = image_file.content_type or 'image/jpeg'
+            update_data['image_url'] = f"data:{mime_type};base64,{b64_string}"
+        
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # 게시글 수정
-        cur.execute('''
-            UPDATE posts 
-            SET title = ?, content = ?, category = ?, place_name = ?
-            WHERE id = ?
-        ''', (title, content, category, place_name, post_id))
+        # 게시글 수정 쿼리 동적 생성
+        if 'image_url' in update_data:
+            cur.execute('''
+                UPDATE posts 
+                SET title = ?, content = ?, category = ?, place_name = ?, image_url = ?
+                WHERE id = ?
+            ''', (title, content, category, place_name, update_data['image_url'], post_id))
+        else:
+            cur.execute('''
+                UPDATE posts 
+                SET title = ?, content = ?, category = ?, place_name = ?
+                WHERE id = ?
+            ''', (title, content, category, place_name, post_id))
         
         conn.commit()
         cur.close()

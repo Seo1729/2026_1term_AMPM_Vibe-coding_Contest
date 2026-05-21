@@ -13,6 +13,7 @@ interface Post {
   user_id: number;
   image_url: string;
   is_popular: number;
+  likes: number;
   created_at: string;
 }
 
@@ -20,6 +21,8 @@ export default function AdminPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editData, setEditData] = useState<Partial<Post>>({});
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editImagePreview, setEditImagePreview] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
 
@@ -66,6 +69,17 @@ export default function AdminPage() {
   const handleEditStart = (post: Post) => {
     setEditingId(post.id);
     setEditData(post);
+    setEditImageFile(null);
+    setEditImagePreview(post.image_url || '');
+  };
+
+  // 수정 모드에서 이미지 변경
+  const handleEditImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setEditImageFile(file);
+      setEditImagePreview(URL.createObjectURL(file));
+    }
   };
 
   // 게시글 수정 저장
@@ -81,6 +95,9 @@ export default function AdminPage() {
       formData.append('content', editData.content as string);
       formData.append('category', editData.category as string);
       formData.append('place_name', editData.place_name as string);
+      if (editImageFile) {
+        formData.append('image', editImageFile);
+      }
 
       const response = await fetch(`http://127.0.0.1:5000/api/posts/${id}`, {
         method: 'PUT',
@@ -90,6 +107,8 @@ export default function AdminPage() {
       if (response.ok) {
         alert('✅ 게시글이 수정되었습니다.');
         setEditingId(null);
+        setEditImageFile(null);
+        setEditImagePreview('');
         loadPosts();
       } else {
         alert('❌ 수정 실패');
@@ -227,6 +246,30 @@ export default function AdminPage() {
                       />
                     </div>
 
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-2">좋아요 수</label>
+                      <input
+                        type="number"
+                        value={editData.likes || 0}
+                        onChange={(e) => setEditData({ ...editData, likes: parseInt(e.target.value) })}
+                        className="w-full p-3 border border-gray-200 rounded-lg text-sm font-medium"
+                        min="0"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-2">📷 사진</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleEditImageChange}
+                        className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
+                      />
+                      {editImagePreview && (
+                        <img src={editImagePreview} alt="미리보기" className="mt-3 w-full h-28 object-cover rounded-xl border border-gray-100" />
+                      )}
+                    </div>
+
                     <div className="flex space-x-2">
                       <button
                         onClick={() => handleEditSave(post.id)}
@@ -256,6 +299,9 @@ export default function AdminPage() {
                               ⭐ 인기글
                             </span>
                           )}
+                          <span className="inline-block text-xs font-bold text-white px-2 py-1 rounded-md bg-red-500">
+                            ❤️ {post.likes}
+                          </span>
                         </div>
                         <h3 className="text-lg font-black text-gray-900">{post.title}</h3>
                         <p className="text-xs text-gray-500 mt-1">📍 {post.place_name}</p>
@@ -264,6 +310,19 @@ export default function AdminPage() {
                         {new Date(post.created_at).toLocaleDateString('ko-KR')}
                       </div>
                     </div>
+
+                    {post.image_url && (
+                      <div className="w-full h-40 mb-4 overflow-hidden rounded-lg border border-gray-100">
+                        <img
+                          src={post.image_url}
+                          alt="게시글 이미지"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    )}
 
                     <p className="text-sm text-gray-700 mb-4 line-clamp-2">{post.content}</p>
 
